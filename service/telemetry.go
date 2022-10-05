@@ -132,10 +132,10 @@ func (tel *telemetryInitializer) initOnce(buildInfo component.BuildInfo, logger 
 	var pe http.Handler
 	var err error
 	if tel.registry.IsEnabled(useOtelForInternalMetricsfeatureGateID) {
-		pe, err = tel.initOpenTelemetry(telAttrs)
-	} else {
-		pe, err = tel.initOpenCensus(cfg, telAttrs)
+		_, err = tel.initOpenTelemetry(telAttrs)
 	}
+	pe, err = tel.initOpenCensus(cfg, telAttrs)
+
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,9 @@ func (tel *telemetryInitializer) initOpenCensus(cfg telemetry.Config, telAttrs m
 
 	// Until we can use a generic metrics exporter, default to Prometheus.
 	opts := ocprom.Options{
-		Namespace: "otelcol",
+		Namespace:  "otelcol",
+		Registerer: prometheus.DefaultRegisterer,
+		Gatherer:   prometheus.DefaultGatherer,
 	}
 
 	opts.ConstLabels = make(map[string]string)
@@ -248,14 +250,12 @@ func (tel *telemetryInitializer) initOpenTelemetry(attrs map[string]string) (htt
 		sdkmetric.WithReader(exporter),
 	)
 
-	registry := prometheus.NewRegistry()
-
-	wrappedRegisterer := prometheus.WrapRegistererWithPrefix("otelcol_", registry)
+	wrappedRegisterer := prometheus.WrapRegistererWithPrefix("otelcol_", prometheus.DefaultRegisterer)
 	if err := wrappedRegisterer.Register(exporter.Collector); err != nil {
 		return nil, fmt.Errorf("failed to register prometheus collector: %w", err)
 	}
 
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{}), nil
+	return promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{}), nil
 }
 
 func (tel *telemetryInitializer) shutdown() error {
